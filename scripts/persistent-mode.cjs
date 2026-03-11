@@ -342,7 +342,26 @@ function readStateFileWithSession(stateDir, filename, sessionId) {
     if (state) {
       return { state, path: sessionPath, isGlobal: false };
     }
-    // Session path not found — do NOT fall back to legacy
+    // Session path not found — fallback: scan ALL session dirs for a state
+    // whose session_id matches ours (handles path mismatches)
+    try {
+      const allSessionsDir = join(stateDir, 'sessions');
+      if (existsSync(allSessionsDir)) {
+        const dirs = readdirSync(allSessionsDir).filter(d => /^[a-zA-Z0-9]/.test(d));
+        for (const dir of dirs) {
+          const candidatePath = join(allSessionsDir, dir, filename);
+          const candidateState = readJsonFile(candidatePath);
+          if (candidateState && candidateState.session_id === sessionId) {
+            return { state: candidateState, path: candidatePath, isGlobal: false };
+          }
+        }
+      }
+    } catch { /* ignore scan errors */ }
+    // Also check legacy path if its session_id matches
+    const legacyResult = readStateFile(stateDir, filename);
+    if (legacyResult.state && legacyResult.state.session_id === sessionId) {
+      return legacyResult;
+    }
     return { state: null, path: null, isGlobal: false };
   }
   // No sessionId: fall back to legacy path (backward compat)
@@ -442,7 +461,15 @@ function countIncompleteTodos(sessionId, projectDir) {
  * See: https://github.com/Yeachan-Heo/oh-my-claudecode/issues/213
  */
 function isContextLimitStop(data) {
-  const reason = (data.stop_reason || data.stopReason || "").toLowerCase();
+  const reasons = [
+    data.stop_reason,
+    data.stopReason,
+    data.end_turn_reason,
+    data.endTurnReason,
+    data.reason,
+  ]
+    .filter((value) => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.toLowerCase().replace(/[\s-]+/g, "_"));
 
   const contextPatterns = [
     "context_limit",
@@ -456,20 +483,27 @@ function isContextLimitStop(data) {
     "input_too_long",
   ];
 
-  if (contextPatterns.some((p) => reason.includes(p))) {
-    return true;
-  }
+  return reasons.some((reason) => contextPatterns.some((p) => reason.includes(p)));
+}
 
-  const endTurnReason = (
-    data.end_turn_reason ||
-    data.endTurnReason ||
-    ""
-  ).toLowerCase();
-  if (endTurnReason && contextPatterns.some((p) => endTurnReason.includes(p))) {
-    return true;
-  }
+const CRITICAL_CONTEXT_STOP_PERCENT = 95;
 
-  return false;
+function estimateContextPercent(transcriptPath) {
+  if (!transcriptPath || !existsSync(transcriptPath)) return 0;
+
+  try {
+    const content = readFileSync(transcriptPath, "utf-8");
+    const windowMatch = content.match(/"context_window"\s{0,5}:\s{0,5}(\d+)/g);
+    const inputMatch = content.match(/"input_tokens"\s{0,5}:\s{0,5}(\d+)/g);
+    if (!windowMatch || !inputMatch) return 0;
+
+    const lastWindow = parseInt(windowMatch[windowMatch.length - 1].match(/(\d+)/)[1], 10);
+    const lastInput = parseInt(inputMatch[inputMatch.length - 1].match(/(\d+)/)[1], 10);
+    if (!Number.isFinite(lastWindow) || lastWindow <= 0 || !Number.isFinite(lastInput)) return 0;
+    return Math.round((lastInput / lastWindow) * 100);
+  } catch {
+    return 0;
+  }
 }
 
 /**
@@ -547,6 +581,12 @@ async function main() {
       return;
     }
 
+    const criticalTranscriptPath = data.transcript_path || data.transcriptPath || "";
+    if (estimateContextPercent(criticalTranscriptPath) >= CRITICAL_CONTEXT_STOP_PERCENT) {
+      console.log(JSON.stringify({ continue: true, suppressOutput: true }));
+      return;
+    }
+
     // Respect user abort (Ctrl+C, cancel)
     if (isUserAbort(data)) {
       console.log(JSON.stringify({ continue: true, suppressOutput: true }));
@@ -603,7 +643,7 @@ async function main() {
 
         console.log(
           JSON.stringify({
-            decision: "block",
+            continue: false, decision: "block",
             reason: `[RALPH LOOP - ITERATION ${iteration + 1}/${maxIter}] Work is NOT done. Continue working.\nWhen FULLY complete (after Architect verification), run /oh-my-claudecode:cancel to cleanly exit ralph mode and clean up all state files. If cancel fails, retry with /oh-my-claudecode:cancel --force.\n${ralph.state.prompt ? `Task: ${ralph.state.prompt}` : ""}`,
           }),
         );
@@ -626,7 +666,7 @@ async function main() {
 
           console.log(
             JSON.stringify({
-              decision: "block",
+              continue: false, decision: "block",
               reason: `[AUTOPILOT - Phase: ${phase}] Autopilot not complete. Continue working. When all phases are complete, run /oh-my-claudecode:cancel to cleanly exit and clean up state files. If cancel fails, retry with /oh-my-claudecode:cancel --force.`,
             }),
           );
@@ -686,7 +726,7 @@ async function main() {
                   sendStopNotification("team", team.state, sessionId, directory).catch(() => {});
 
                   console.log(JSON.stringify({
-                    decision: "block",
+                    continue: false, decision: "block",
                     reason: `[TEAM PIPELINE - PHASE: ${phase.toUpperCase()} | REINFORCEMENT ${breakerCount}/${TEAM_PIPELINE_STOP_BLOCKER_MAX}] The team pipeline is active in phase "${phase}". Continue working on the team workflow. Do not stop until the pipeline reaches a terminal state (complete/failed/cancelled). When done, run /oh-my-claudecode:cancel to cleanly exit.`,
                   }));
                   return;
@@ -723,7 +763,7 @@ async function main() {
           sendStopNotification("ralplan", ralplan.state, sessionId, directory).catch(() => {});
 
           console.log(JSON.stringify({
-            decision: "block",
+            continue: false, decision: "block",
             reason: `[RALPLAN - CONSENSUS PLANNING | REINFORCEMENT ${breakerCount}/${RALPLAN_STOP_BLOCKER_MAX}] The ralplan consensus workflow is active. Continue the Planner/Architect/Critic loop. Do not stop until consensus is reached or the workflow completes. When done, run /oh-my-claudecode:cancel to cleanly exit.`,
           }));
           return;
@@ -749,7 +789,7 @@ async function main() {
 
           console.log(
             JSON.stringify({
-              decision: "block",
+              continue: false, decision: "block",
               reason: `[ULTRAPILOT] ${incomplete} workers still running. Continue working. When all workers complete, run /oh-my-claudecode:cancel to cleanly exit and clean up state files. If cancel fails, retry with /oh-my-claudecode:cancel --force.`,
             }),
           );
@@ -774,7 +814,7 @@ async function main() {
 
           console.log(
             JSON.stringify({
-              decision: "block",
+              continue: false, decision: "block",
               reason: `[SWARM ACTIVE] ${pending} tasks remain. Continue working. When all tasks are done, run /oh-my-claudecode:cancel to cleanly exit and clean up state files. If cancel fails, retry with /oh-my-claudecode:cancel --force.`,
             }),
           );
@@ -799,7 +839,7 @@ async function main() {
 
           console.log(
             JSON.stringify({
-              decision: "block",
+              continue: false, decision: "block",
               reason: `[PIPELINE - Stage ${currentStage + 1}/${totalStages}] Pipeline not complete. Continue working. When all stages complete, run /oh-my-claudecode:cancel to cleanly exit and clean up state files. If cancel fails, retry with /oh-my-claudecode:cancel --force.`,
             }),
           );
@@ -823,7 +863,7 @@ async function main() {
 
           console.log(
             JSON.stringify({
-              decision: "block",
+              continue: false, decision: "block",
               reason: `[TEAM - Phase: ${phase}] Team mode active. Continue working. When all team tasks complete, run /oh-my-claudecode:cancel to cleanly exit. If cancel fails, retry with /oh-my-claudecode:cancel --force.`,
             }),
           );
@@ -847,7 +887,7 @@ async function main() {
 
           console.log(
             JSON.stringify({
-              decision: "block",
+              continue: false, decision: "block",
               reason: `[OMC TEAMS - Phase: ${phase}] OMC Teams workers active. Continue working. When all workers complete, run /oh-my-claudecode:cancel to cleanly exit. If cancel fails, retry with /oh-my-claudecode:cancel --force.`,
             }),
           );
@@ -870,7 +910,7 @@ async function main() {
 
         console.log(
           JSON.stringify({
-            decision: "block",
+            continue: false, decision: "block",
             reason: `[ULTRAQA - Cycle ${cycle + 1}/${maxCycles}] Tests not all passing. Continue fixing. When all tests pass, run /oh-my-claudecode:cancel to cleanly exit and clean up state files. If cancel fails, retry with /oh-my-claudecode:cancel --force.`,
           }),
         );
@@ -921,7 +961,7 @@ async function main() {
         reason += `\nTask: ${ultrawork.state.original_prompt}`;
       }
 
-      console.log(JSON.stringify({ decision: "block", reason }));
+      console.log(JSON.stringify({ continue: false, decision: "block", reason }));
       return;
     }
 
@@ -950,7 +990,7 @@ async function main() {
 
             const skillName = skillState.state.skill_name || "unknown";
             console.log(JSON.stringify({
-              decision: "block",
+              continue: false, decision: "block",
               reason: `[SKILL ACTIVE: ${skillName}] The "${skillName}" skill is still executing (reinforcement ${count + 1}/${maxReinforcements}). Continue working on the skill's instructions. Do not stop until the skill completes its workflow.`,
             }));
             return;

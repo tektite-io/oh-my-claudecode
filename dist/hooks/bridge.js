@@ -22,7 +22,7 @@ import { processOrchestratorPreTool, processOrchestratorPostTool } from "./omc-o
 import { normalizeHookInput } from "./bridge-normalize.js";
 import { addBackgroundTask, getRunningTaskCount, } from "../hud/background-tasks.js";
 import { readHudState, writeHudState } from "../hud/state.js";
-import { loadConfig } from "../config/loader.js";
+import { compactOmcStartupGuidance, loadConfig } from "../config/loader.js";
 import { writeSkillActiveState } from "./skill-state/index.js";
 import { ULTRAWORK_MESSAGE, ULTRATHINK_MESSAGE, SEARCH_MESSAGE, ANALYZE_MESSAGE, TDD_MESSAGE, CODE_REVIEW_MESSAGE, SECURITY_REVIEW_MESSAGE, RALPH_MESSAGE, PROMPT_TRANSLATION_MESSAGE, } from "../installer/hooks.js";
 // Agent dashboard is used in pre/post-tool-use hot path
@@ -362,10 +362,12 @@ async function processKeywordDetector(input) {
         switch (keywordType) {
             case "ralph": {
                 // Lazy-load ralph module
-                const { createRalphLoopHook, findPrdPath: findPrd, initPrd: initPrdFn, initProgress: initProgressFn, detectNoPrdFlag: detectNoPrd, stripNoPrdFlag: stripNoPrd } = await import("./ralph/index.js");
+                const { createRalphLoopHook, findPrdPath: findPrd, initPrd: initPrdFn, initProgress: initProgressFn, detectNoPrdFlag: detectNoPrd, stripNoPrdFlag: stripNoPrd, detectCriticModeFlag, stripCriticModeFlag } = await import("./ralph/index.js");
                 // Handle --no-prd flag
                 const noPrd = detectNoPrd(promptText);
-                const cleanPrompt = noPrd ? stripNoPrd(promptText) : promptText;
+                const criticMode = detectCriticModeFlag(promptText) ?? undefined;
+                const promptWithoutCriticFlag = stripCriticModeFlag(promptText);
+                const cleanPrompt = noPrd ? stripNoPrd(promptWithoutCriticFlag) : promptWithoutCriticFlag;
                 // Auto-generate scaffold PRD if none exists and --no-prd not set
                 const existingPrd = findPrd(directory);
                 if (!noPrd && !existingPrd) {
@@ -384,7 +386,7 @@ async function processKeywordDetector(input) {
                 }
                 // Activate ralph state which also auto-activates ultrawork
                 const hook = createRalphLoopHook(directory);
-                hook.startLoop(sessionId, cleanPrompt);
+                hook.startLoop(sessionId, cleanPrompt, criticMode ? { criticMode } : undefined);
                 messages.push(RALPH_MESSAGE);
                 break;
             }
@@ -482,6 +484,9 @@ async function processPersistentMode(input) {
         toolName: input.toolName,
         tool_input: input.tool_input,
         toolInput: input.toolInput,
+        reason: input.reason,
+        transcript_path: input.transcript_path,
+        transcriptPath: input.transcriptPath,
     };
     const result = await checkPersistentModes(sessionId, directory, stopContext);
     const output = createHookOutput(result);
@@ -697,7 +702,7 @@ Treat this as prior-session context only. Prioritize the user's newest request, 
     const agentsMdPath = join(directory, 'AGENTS.md');
     if (existsSync(agentsMdPath)) {
         try {
-            let agentsContent = readFileSync(agentsMdPath, 'utf-8').trim();
+            let agentsContent = compactOmcStartupGuidance(readFileSync(agentsMdPath, 'utf-8')).trim();
             if (agentsContent) {
                 // Truncate to ~5000 tokens (20000 chars) to avoid context bloat
                 const MAX_AGENTS_CHARS = 20000;
@@ -1030,12 +1035,14 @@ function processPreToolUse(input) {
             };
         }
     }
-    // Wake OpenClaw gateway for pre-tool-use (non-blocking, fires only for allowed tools)
-    if (input.sessionId) {
+    // Wake OpenClaw gateway for pre-tool-use (non-blocking, fires only for allowed tools).
+    // AskUserQuestion already has a dedicated high-signal OpenClaw event.
+    if (input.sessionId && input.toolName !== "AskUserQuestion") {
         _openclaw.wake("pre-tool-use", {
             sessionId: input.sessionId,
             projectPath: directory,
             toolName: input.toolName,
+            toolInput: input.toolInput,
         });
     }
     return {
@@ -1075,13 +1082,15 @@ async function processPostToolUse(input) {
     if (toolName === "skill") {
         const skillName = getInvokedSkillName(input.toolInput);
         if (skillName === "ralph") {
-            const { createRalphLoopHook, findPrdPath: findPrd, initPrd: initPrdFn, initProgress: initProgressFn, detectNoPrdFlag: detectNoPrd, stripNoPrdFlag: stripNoPrd } = await import("./ralph/index.js");
+            const { createRalphLoopHook, findPrdPath: findPrd, initPrd: initPrdFn, initProgress: initProgressFn, detectNoPrdFlag: detectNoPrd, stripNoPrdFlag: stripNoPrd, detectCriticModeFlag, stripCriticModeFlag } = await import("./ralph/index.js");
             const rawPrompt = typeof input.prompt === "string" && input.prompt.trim().length > 0
                 ? input.prompt
                 : "Ralph loop activated via Skill tool";
             // Handle --no-prd flag
             const noPrd = detectNoPrd(rawPrompt);
-            const cleanPrompt = noPrd ? stripNoPrd(rawPrompt) : rawPrompt;
+            const criticMode = detectCriticModeFlag(rawPrompt) ?? undefined;
+            const promptWithoutCriticFlag = stripCriticModeFlag(rawPrompt);
+            const cleanPrompt = noPrd ? stripNoPrd(promptWithoutCriticFlag) : promptWithoutCriticFlag;
             // Auto-generate scaffold PRD if none exists and --no-prd not set
             const existingPrd = findPrd(directory);
             if (!noPrd && !existingPrd) {
@@ -1099,7 +1108,7 @@ async function processPostToolUse(input) {
                 initProgressFn(directory);
             }
             const hook = createRalphLoopHook(directory);
-            hook.startLoop(input.sessionId, cleanPrompt);
+            hook.startLoop(input.sessionId, cleanPrompt, criticMode ? { criticMode } : undefined);
         }
         // Clear skill-active state on skill completion to prevent false-blocking.
         // Without this, every non-'none' skill falsely blocks stops until TTL expires.
@@ -1123,12 +1132,15 @@ async function processPostToolUse(input) {
             messages.push(dashboard);
         }
     }
-    // Wake OpenClaw gateway for post-tool-use (non-blocking, fires for all tools)
-    if (input.sessionId) {
+    // Wake OpenClaw gateway for post-tool-use (non-blocking, fires for all tools).
+    // AskUserQuestion already emitted a dedicated question.requested signal.
+    if (input.sessionId && input.toolName !== "AskUserQuestion") {
         _openclaw.wake("post-tool-use", {
             sessionId: input.sessionId,
             projectPath: directory,
             toolName: input.toolName,
+            toolInput: input.toolInput,
+            toolOutput: input.toolOutput,
         });
     }
     if (messages.length > 0) {

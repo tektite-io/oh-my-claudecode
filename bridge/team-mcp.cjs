@@ -408,11 +408,11 @@ var require_codegen = __commonJS({
         const rhs = this.rhs === void 0 ? "" : ` = ${this.rhs}`;
         return `${varKind} ${this.name}${rhs};` + _n;
       }
-      optimizeNames(names, constants) {
+      optimizeNames(names, constants2) {
         if (!names[this.name.str])
           return;
         if (this.rhs)
-          this.rhs = optimizeExpr(this.rhs, names, constants);
+          this.rhs = optimizeExpr(this.rhs, names, constants2);
         return this;
       }
       get names() {
@@ -429,10 +429,10 @@ var require_codegen = __commonJS({
       render({ _n }) {
         return `${this.lhs} = ${this.rhs};` + _n;
       }
-      optimizeNames(names, constants) {
+      optimizeNames(names, constants2) {
         if (this.lhs instanceof code_1.Name && !names[this.lhs.str] && !this.sideEffects)
           return;
-        this.rhs = optimizeExpr(this.rhs, names, constants);
+        this.rhs = optimizeExpr(this.rhs, names, constants2);
         return this;
       }
       get names() {
@@ -493,8 +493,8 @@ var require_codegen = __commonJS({
       optimizeNodes() {
         return `${this.code}` ? this : void 0;
       }
-      optimizeNames(names, constants) {
-        this.code = optimizeExpr(this.code, names, constants);
+      optimizeNames(names, constants2) {
+        this.code = optimizeExpr(this.code, names, constants2);
         return this;
       }
       get names() {
@@ -523,12 +523,12 @@ var require_codegen = __commonJS({
         }
         return nodes.length > 0 ? this : void 0;
       }
-      optimizeNames(names, constants) {
+      optimizeNames(names, constants2) {
         const { nodes } = this;
         let i = nodes.length;
         while (i--) {
           const n = nodes[i];
-          if (n.optimizeNames(names, constants))
+          if (n.optimizeNames(names, constants2))
             continue;
           subtractNames(names, n.names);
           nodes.splice(i, 1);
@@ -581,12 +581,12 @@ var require_codegen = __commonJS({
           return void 0;
         return this;
       }
-      optimizeNames(names, constants) {
+      optimizeNames(names, constants2) {
         var _a;
-        this.else = (_a = this.else) === null || _a === void 0 ? void 0 : _a.optimizeNames(names, constants);
-        if (!(super.optimizeNames(names, constants) || this.else))
+        this.else = (_a = this.else) === null || _a === void 0 ? void 0 : _a.optimizeNames(names, constants2);
+        if (!(super.optimizeNames(names, constants2) || this.else))
           return;
-        this.condition = optimizeExpr(this.condition, names, constants);
+        this.condition = optimizeExpr(this.condition, names, constants2);
         return this;
       }
       get names() {
@@ -609,10 +609,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.iteration})` + super.render(opts);
       }
-      optimizeNames(names, constants) {
-        if (!super.optimizeNames(names, constants))
+      optimizeNames(names, constants2) {
+        if (!super.optimizeNames(names, constants2))
           return;
-        this.iteration = optimizeExpr(this.iteration, names, constants);
+        this.iteration = optimizeExpr(this.iteration, names, constants2);
         return this;
       }
       get names() {
@@ -648,10 +648,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.varKind} ${this.name} ${this.loop} ${this.iterable})` + super.render(opts);
       }
-      optimizeNames(names, constants) {
-        if (!super.optimizeNames(names, constants))
+      optimizeNames(names, constants2) {
+        if (!super.optimizeNames(names, constants2))
           return;
-        this.iterable = optimizeExpr(this.iterable, names, constants);
+        this.iterable = optimizeExpr(this.iterable, names, constants2);
         return this;
       }
       get names() {
@@ -693,11 +693,11 @@ var require_codegen = __commonJS({
         (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNodes();
         return this;
       }
-      optimizeNames(names, constants) {
+      optimizeNames(names, constants2) {
         var _a, _b;
-        super.optimizeNames(names, constants);
-        (_a = this.catch) === null || _a === void 0 ? void 0 : _a.optimizeNames(names, constants);
-        (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNames(names, constants);
+        super.optimizeNames(names, constants2);
+        (_a = this.catch) === null || _a === void 0 ? void 0 : _a.optimizeNames(names, constants2);
+        (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNames(names, constants2);
         return this;
       }
       get names() {
@@ -998,7 +998,7 @@ var require_codegen = __commonJS({
     function addExprNames(names, from) {
       return from instanceof code_1._CodeOrName ? addNames(names, from.names) : names;
     }
-    function optimizeExpr(expr, names, constants) {
+    function optimizeExpr(expr, names, constants2) {
       if (expr instanceof code_1.Name)
         return replaceName(expr);
       if (!canOptimize(expr))
@@ -1013,14 +1013,14 @@ var require_codegen = __commonJS({
         return items;
       }, []));
       function replaceName(n) {
-        const c = constants[n.str];
+        const c = constants2[n.str];
         if (c === void 0 || names[n.str] !== 1)
           return n;
         delete names[n.str];
         return c;
       }
       function canOptimize(e) {
-        return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names[c.str] === 1 && constants[c.str] !== void 0);
+        return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names[c.str] === 1 && constants2[c.str] !== void 0);
       }
     }
     function subtractNames(names, from) {
@@ -2982,7 +2982,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve.call(this, root, ref);
+      let _sch = resolve2.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3009,7 +3009,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve(root, ref) {
+    function resolve2(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3584,55 +3584,55 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve(baseURI, relativeURI, options) {
+    function resolve2(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const resolved = resolveComponent(parse3(baseURI, schemelessOptions), parse3(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative, options, skipNormalization) {
+    function resolveComponent(base, relative2, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse3(serialize(base, options), options);
-        relative = parse3(serialize(relative, options), options);
+        relative2 = parse3(serialize(relative2, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative.scheme) {
-        target.scheme = relative.scheme;
-        target.userinfo = relative.userinfo;
-        target.host = relative.host;
-        target.port = relative.port;
-        target.path = removeDotSegments(relative.path || "");
-        target.query = relative.query;
+      if (!options.tolerant && relative2.scheme) {
+        target.scheme = relative2.scheme;
+        target.userinfo = relative2.userinfo;
+        target.host = relative2.host;
+        target.port = relative2.port;
+        target.path = removeDotSegments(relative2.path || "");
+        target.query = relative2.query;
       } else {
-        if (relative.userinfo !== void 0 || relative.host !== void 0 || relative.port !== void 0) {
-          target.userinfo = relative.userinfo;
-          target.host = relative.host;
-          target.port = relative.port;
-          target.path = removeDotSegments(relative.path || "");
-          target.query = relative.query;
+        if (relative2.userinfo !== void 0 || relative2.host !== void 0 || relative2.port !== void 0) {
+          target.userinfo = relative2.userinfo;
+          target.host = relative2.host;
+          target.port = relative2.port;
+          target.path = removeDotSegments(relative2.path || "");
+          target.query = relative2.query;
         } else {
-          if (!relative.path) {
+          if (!relative2.path) {
             target.path = base.path;
-            if (relative.query !== void 0) {
-              target.query = relative.query;
+            if (relative2.query !== void 0) {
+              target.query = relative2.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative.path[0] === "/") {
-              target.path = removeDotSegments(relative.path);
+            if (relative2.path[0] === "/") {
+              target.path = removeDotSegments(relative2.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative.path;
+                target.path = "/" + relative2.path;
               } else if (!base.path) {
-                target.path = relative.path;
+                target.path = relative2.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative2.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative.query;
+            target.query = relative2.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3640,7 +3640,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative.fragment;
+      target.fragment = relative2.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -3811,7 +3811,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve,
+      resolve: resolve2,
       resolveComponent,
       equal,
       serialize,
@@ -16664,7 +16664,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        await new Promise((resolve2) => setTimeout(resolve2, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error2) {
@@ -16681,7 +16681,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve2, reject) => {
       const earlyReject = (error2) => {
         reject(error2);
       };
@@ -16759,7 +16759,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve(parseResult.data);
+            resolve2(parseResult.data);
           }
         } catch (error2) {
           reject(error2);
@@ -17020,12 +17020,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve2, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve, interval);
+      const timeoutId = setTimeout(resolve2, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -17754,12 +17754,12 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message) {
-    return new Promise((resolve) => {
+    return new Promise((resolve2) => {
       const json = serializeMessage(message);
       if (this._stdout.write(json)) {
-        resolve();
+        resolve2();
       } else {
-        this._stdout.once("drain", resolve);
+        this._stdout.once("drain", resolve2);
       }
     });
   }
@@ -17767,8 +17767,8 @@ var StdioServerTransport = class {
 
 // src/mcp/team-server.ts
 var import_child_process3 = require("child_process");
-var import_path3 = require("path");
-var import_fs2 = require("fs");
+var import_path4 = require("path");
+var import_fs3 = require("fs");
 var import_promises2 = require("fs/promises");
 var import_os = require("os");
 
@@ -17799,6 +17799,16 @@ async function tmuxAsync(args) {
     return promisifiedExec(`tmux ${escaped}`);
   }
   return promisifiedExecFile("tmux", args);
+}
+function sanitizeName(name) {
+  const sanitized = name.replace(/[^a-zA-Z0-9-]/g, "");
+  if (sanitized.length === 0) {
+    throw new Error(`Invalid name: "${name}" contains no valid characters (alphanumeric or hyphen)`);
+  }
+  if (sanitized.length < 2) {
+    throw new Error(`Invalid name: "${name}" too short after sanitization (minimum 2 characters)`);
+  }
+  return sanitized.slice(0, 50);
 }
 function normalizeTmuxCapture(value) {
   return value.replace(/\r/g, "").replace(/\s+/g, " ").trim();
@@ -18008,13 +18018,13 @@ var import_child_process2 = require("child_process");
 var DEFAULT_NUDGE_CONFIG = {
   delayMs: 3e4,
   maxCount: 3,
-  message: "Continue working on your assigned task."
+  message: "Continue working on your assigned task and report concrete progress (not ACK-only)."
 };
 function capturePane(paneId) {
-  return new Promise((resolve) => {
+  return new Promise((resolve2) => {
     (0, import_child_process2.execFile)("tmux", ["capture-pane", "-t", paneId, "-p", "-S", "-80"], (err, stdout) => {
-      if (err) resolve("");
-      else resolve(stdout ?? "");
+      if (err) resolve2("");
+      else resolve2(stdout ?? "");
     });
   });
 }
@@ -18093,14 +18103,111 @@ var NudgeTracker = class {
 };
 
 // src/mcp/team-job-convergence.ts
+var import_fs2 = require("fs");
+var import_path3 = require("path");
+
+// src/team/git-worktree.ts
+var import_node_fs = require("node:fs");
+var import_node_path = require("node:path");
+var import_node_child_process = require("node:child_process");
+
+// src/team/fs-utils.ts
 var import_fs = require("fs");
 var import_path2 = require("path");
+function atomicWriteJson(filePath, data, mode = 384) {
+  const dir = (0, import_path2.dirname)(filePath);
+  if (!(0, import_fs.existsSync)(dir)) (0, import_fs.mkdirSync)(dir, { recursive: true, mode: 448 });
+  const tmpPath = `${filePath}.tmp.${process.pid}.${Date.now()}`;
+  (0, import_fs.writeFileSync)(tmpPath, JSON.stringify(data, null, 2) + "\n", { encoding: "utf-8", mode });
+  (0, import_fs.renameSync)(tmpPath, filePath);
+}
+function ensureDirWithMode(dirPath, mode = 448) {
+  if (!(0, import_fs.existsSync)(dirPath)) (0, import_fs.mkdirSync)(dirPath, { recursive: true, mode });
+}
+function safeRealpath(p) {
+  try {
+    return (0, import_fs.realpathSync)(p);
+  } catch {
+    const parent = (0, import_path2.dirname)(p);
+    const name = (0, import_path2.basename)(p);
+    try {
+      return (0, import_path2.resolve)((0, import_fs.realpathSync)(parent), name);
+    } catch {
+      return (0, import_path2.resolve)(p);
+    }
+  }
+}
+function validateResolvedPath(resolvedPath, expectedBase) {
+  const absResolved = safeRealpath(resolvedPath);
+  const absBase = safeRealpath(expectedBase);
+  const rel = (0, import_path2.relative)(absBase, absResolved);
+  if (rel.startsWith("..") || (0, import_path2.resolve)(absBase, rel) !== absResolved) {
+    throw new Error(`Path traversal detected: "${resolvedPath}" escapes base "${expectedBase}"`);
+  }
+}
+
+// src/team/git-worktree.ts
+function getWorktreePath(repoRoot, teamName, workerName) {
+  return (0, import_node_path.join)(repoRoot, ".omc", "worktrees", sanitizeName(teamName), sanitizeName(workerName));
+}
+function getBranchName(teamName, workerName) {
+  return `omc-team/${sanitizeName(teamName)}/${sanitizeName(workerName)}`;
+}
+function getMetadataPath(repoRoot, teamName) {
+  return (0, import_node_path.join)(repoRoot, ".omc", "state", "team-bridge", sanitizeName(teamName), "worktrees.json");
+}
+function readMetadata(repoRoot, teamName) {
+  const metaPath = getMetadataPath(repoRoot, teamName);
+  if (!(0, import_node_fs.existsSync)(metaPath)) return [];
+  try {
+    return JSON.parse((0, import_node_fs.readFileSync)(metaPath, "utf-8"));
+  } catch {
+    return [];
+  }
+}
+function writeMetadata(repoRoot, teamName, entries) {
+  const metaPath = getMetadataPath(repoRoot, teamName);
+  validateResolvedPath(metaPath, repoRoot);
+  const dir = (0, import_node_path.join)(repoRoot, ".omc", "state", "team-bridge", sanitizeName(teamName));
+  ensureDirWithMode(dir);
+  atomicWriteJson(metaPath, entries);
+}
+function removeWorkerWorktree(teamName, workerName, repoRoot) {
+  const wtPath = getWorktreePath(repoRoot, teamName, workerName);
+  const branch = getBranchName(teamName, workerName);
+  try {
+    (0, import_node_child_process.execFileSync)("git", ["worktree", "remove", "--force", wtPath], { cwd: repoRoot, stdio: "pipe" });
+  } catch {
+  }
+  try {
+    (0, import_node_child_process.execFileSync)("git", ["worktree", "prune"], { cwd: repoRoot, stdio: "pipe" });
+  } catch {
+  }
+  try {
+    (0, import_node_child_process.execFileSync)("git", ["branch", "-D", branch], { cwd: repoRoot, stdio: "pipe" });
+  } catch {
+  }
+  const existing = readMetadata(repoRoot, teamName);
+  const updated = existing.filter((e) => e.workerName !== workerName);
+  writeMetadata(repoRoot, teamName, updated);
+}
+function cleanupTeamWorktrees(teamName, repoRoot) {
+  const entries = readMetadata(repoRoot, teamName);
+  for (const entry of entries) {
+    try {
+      removeWorkerWorktree(teamName, entry.workerName, repoRoot);
+    } catch {
+    }
+  }
+}
+
+// src/mcp/team-job-convergence.ts
 function readResultArtifact(omcJobsDir, jobId) {
-  const artifactPath = (0, import_path2.join)(omcJobsDir, `${jobId}-result.json`);
-  if (!(0, import_fs.existsSync)(artifactPath)) return { kind: "none" };
+  const artifactPath = (0, import_path3.join)(omcJobsDir, `${jobId}-result.json`);
+  if (!(0, import_fs2.existsSync)(artifactPath)) return { kind: "none" };
   let raw;
   try {
-    raw = (0, import_fs.readFileSync)(artifactPath, "utf-8");
+    raw = (0, import_fs2.readFileSync)(artifactPath, "utf-8");
   } catch {
     return { kind: "none" };
   }
@@ -18170,21 +18277,28 @@ function clearScopedTeamState(job) {
   } catch (error2) {
     return `team state cleanup skipped (invalid teamName): ${error2 instanceof Error ? error2.message : String(error2)}`;
   }
-  const stateDir = (0, import_path2.join)(job.cwd, ".omc", "state", "team", job.teamName);
+  const stateDir = (0, import_path3.join)(job.cwd, ".omc", "state", "team", job.teamName);
+  let worktreeMessage = "worktree cleanup skipped.";
   try {
-    if (!(0, import_fs.existsSync)(stateDir)) {
-      return `team state dir not found at ${stateDir}.`;
-    }
-    (0, import_fs.rmSync)(stateDir, { recursive: true, force: true });
-    return `team state dir removed at ${stateDir}.`;
+    cleanupTeamWorktrees(job.teamName, job.cwd);
+    worktreeMessage = `worktree cleanup attempted for ${job.teamName}.`;
   } catch (error2) {
-    return `team state cleanup failed at ${stateDir}: ${error2 instanceof Error ? error2.message : String(error2)}`;
+    worktreeMessage = `worktree cleanup skipped: ${error2 instanceof Error ? error2.message : String(error2)}`;
+  }
+  try {
+    if (!(0, import_fs2.existsSync)(stateDir)) {
+      return `${worktreeMessage} team state dir not found at ${stateDir}.`;
+    }
+    (0, import_fs2.rmSync)(stateDir, { recursive: true, force: true });
+    return `${worktreeMessage} team state dir removed at ${stateDir}.`;
+  } catch (error2) {
+    return `${worktreeMessage} team state cleanup failed at ${stateDir}: ${error2 instanceof Error ? error2.message : String(error2)}`;
   }
 }
 
 // src/mcp/team-server.ts
 var omcTeamJobs = /* @__PURE__ */ new Map();
-var OMC_JOBS_DIR = process.env.OMC_JOBS_DIR || (0, import_path3.join)((0, import_os.homedir)(), ".omc", "team-jobs");
+var OMC_JOBS_DIR = process.env.OMC_JOBS_DIR || (0, import_path4.join)((0, import_os.homedir)(), ".omc", "team-jobs");
 var DEPRECATION_CODE = "deprecated_cli_only";
 var TEAM_CLI_REPLACEMENT_HINTS = {
   omc_run_team_start: "omc team start",
@@ -18269,20 +18383,20 @@ function createDeprecatedCliOnlyEnvelopeWithArgs(toolName, args) {
 }
 function persistJob(jobId, job) {
   try {
-    if (!(0, import_fs2.existsSync)(OMC_JOBS_DIR)) (0, import_fs2.mkdirSync)(OMC_JOBS_DIR, { recursive: true });
-    (0, import_fs2.writeFileSync)((0, import_path3.join)(OMC_JOBS_DIR, `${jobId}.json`), JSON.stringify(job), "utf-8");
+    if (!(0, import_fs3.existsSync)(OMC_JOBS_DIR)) (0, import_fs3.mkdirSync)(OMC_JOBS_DIR, { recursive: true });
+    (0, import_fs3.writeFileSync)((0, import_path4.join)(OMC_JOBS_DIR, `${jobId}.json`), JSON.stringify(job), "utf-8");
   } catch {
   }
 }
 function loadJobFromDisk(jobId) {
   try {
-    return JSON.parse((0, import_fs2.readFileSync)((0, import_path3.join)(OMC_JOBS_DIR, `${jobId}.json`), "utf-8"));
+    return JSON.parse((0, import_fs3.readFileSync)((0, import_path4.join)(OMC_JOBS_DIR, `${jobId}.json`), "utf-8"));
   } catch {
     return void 0;
   }
 }
 async function loadPaneIds(jobId) {
-  const p = (0, import_path3.join)(OMC_JOBS_DIR, `${jobId}-panes.json`);
+  const p = (0, import_path4.join)(OMC_JOBS_DIR, `${jobId}-panes.json`);
   try {
     return JSON.parse(await (0, import_promises2.readFile)(p, "utf-8"));
   } catch {
@@ -18330,7 +18444,7 @@ var waitSchema = external_exports.object({
   timeout_ms: external_exports.number().optional().describe("Maximum wait time in ms (default: 300000, max: 3600000)"),
   nudge_delay_ms: external_exports.number().optional().describe("Milliseconds a pane must be idle before nudging (default: 30000)"),
   nudge_max_count: external_exports.number().optional().describe("Maximum nudges per pane (default: 3)"),
-  nudge_message: external_exports.string().optional().describe('Message sent as nudge (default: "Continue working on your assigned task.")')
+  nudge_message: external_exports.string().optional().describe('Message sent as nudge (default: "Continue working on your assigned task and report concrete progress (not ACK-only).")')
 });
 var cleanupSchema = external_exports.object({
   job_id: external_exports.string().describe("Job ID returned by omc_run_team_start"),
@@ -18345,7 +18459,7 @@ async function handleStart(args) {
   const input = startSchema.parse(args);
   validateTeamName(input.teamName);
   const jobId = `omc-${Date.now().toString(36)}`;
-  const runtimeCliPath = (0, import_path3.join)(__dirname, "runtime-cli.cjs");
+  const runtimeCliPath = (0, import_path4.join)(__dirname, "runtime-cli.cjs");
   const job = { status: "running", startedAt: Date.now(), teamName: input.teamName, cwd: input.cwd };
   omcTeamJobs.set(jobId, job);
   const child = (0, import_child_process3.spawn)("node", [runtimeCliPath], {
@@ -18568,7 +18682,7 @@ var TOOLS = [
         timeout_ms: { type: "number", description: "Maximum wait time in ms (default: 300000, max: 3600000)" },
         nudge_delay_ms: { type: "number", description: "Milliseconds a pane must be idle before nudging (default: 30000)" },
         nudge_max_count: { type: "number", description: "Maximum nudges per pane (default: 3)" },
-        nudge_message: { type: "string", description: 'Message sent as nudge (default: "Continue working on your assigned task.")' }
+        nudge_message: { type: "string", description: 'Message sent as nudge (default: "Continue working on your assigned task and report concrete progress (not ACK-only).")' }
       },
       required: ["job_id"]
     }

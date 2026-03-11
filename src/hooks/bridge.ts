@@ -27,7 +27,7 @@ import {
   getRunningTaskCount,
 } from "../hud/background-tasks.js";
 import { readHudState, writeHudState } from "../hud/state.js";
-import { loadConfig } from "../config/loader.js";
+import { compactOmcStartupGuidance, loadConfig } from "../config/loader.js";
 import { writeSkillActiveState } from "./skill-state/index.js";
 import {
   ULTRAWORK_MESSAGE,
@@ -527,11 +527,13 @@ async function processKeywordDetector(input: HookInput): Promise<HookOutput> {
     switch (keywordType) {
       case "ralph": {
         // Lazy-load ralph module
-        const { createRalphLoopHook, findPrdPath: findPrd, initPrd: initPrdFn, initProgress: initProgressFn, detectNoPrdFlag: detectNoPrd, stripNoPrdFlag: stripNoPrd } = await import("./ralph/index.js");
+        const { createRalphLoopHook, findPrdPath: findPrd, initPrd: initPrdFn, initProgress: initProgressFn, detectNoPrdFlag: detectNoPrd, stripNoPrdFlag: stripNoPrd, detectCriticModeFlag, stripCriticModeFlag } = await import("./ralph/index.js");
 
         // Handle --no-prd flag
         const noPrd = detectNoPrd(promptText);
-        const cleanPrompt = noPrd ? stripNoPrd(promptText) : promptText;
+        const criticMode = detectCriticModeFlag(promptText) ?? undefined;
+        const promptWithoutCriticFlag = stripCriticModeFlag(promptText);
+        const cleanPrompt = noPrd ? stripNoPrd(promptWithoutCriticFlag) : promptWithoutCriticFlag;
 
         // Auto-generate scaffold PRD if none exists and --no-prd not set
         const existingPrd = findPrd(directory);
@@ -551,7 +553,7 @@ async function processKeywordDetector(input: HookInput): Promise<HookOutput> {
 
         // Activate ralph state which also auto-activates ultrawork
         const hook = createRalphLoopHook(directory);
-        hook.startLoop(sessionId, cleanPrompt);
+        hook.startLoop(sessionId, cleanPrompt, criticMode ? { criticMode } : undefined);
 
         messages.push(RALPH_MESSAGE);
         break;
@@ -684,6 +686,13 @@ async function processPersistentMode(input: HookInput): Promise<HookOutput> {
     toolName: input.toolName,
     tool_input: (input as Record<string, unknown>).tool_input,
     toolInput: input.toolInput,
+    reason: (input as Record<string, unknown>).reason as string | undefined,
+    transcript_path: (input as Record<string, unknown>).transcript_path as
+      | string
+      | undefined,
+    transcriptPath: (input as Record<string, unknown>).transcriptPath as
+      | string
+      | undefined,
   };
 
   const result = await checkPersistentModes(sessionId, directory, stopContext);
@@ -927,7 +936,7 @@ Treat this as prior-session context only. Prioritize the user's newest request, 
   const agentsMdPath = join(directory, 'AGENTS.md');
   if (existsSync(agentsMdPath)) {
     try {
-      let agentsContent = readFileSync(agentsMdPath, 'utf-8').trim();
+      let agentsContent = compactOmcStartupGuidance(readFileSync(agentsMdPath, 'utf-8')).trim();
       if (agentsContent) {
         // Truncate to ~5000 tokens (20000 chars) to avoid context bloat
         const MAX_AGENTS_CHARS = 20000;
@@ -1329,12 +1338,14 @@ function processPreToolUse(input: HookInput): HookOutput {
     }
   }
 
-  // Wake OpenClaw gateway for pre-tool-use (non-blocking, fires only for allowed tools)
-  if (input.sessionId) {
+  // Wake OpenClaw gateway for pre-tool-use (non-blocking, fires only for allowed tools).
+  // AskUserQuestion already has a dedicated high-signal OpenClaw event.
+  if (input.sessionId && input.toolName !== "AskUserQuestion") {
     _openclaw.wake("pre-tool-use", {
       sessionId: input.sessionId,
       projectPath: directory,
       toolName: input.toolName,
+      toolInput: input.toolInput,
     });
   }
 
@@ -1383,7 +1394,7 @@ async function processPostToolUse(input: HookInput): Promise<HookOutput> {
   if (toolName === "skill") {
     const skillName = getInvokedSkillName(input.toolInput);
     if (skillName === "ralph") {
-      const { createRalphLoopHook, findPrdPath: findPrd, initPrd: initPrdFn, initProgress: initProgressFn, detectNoPrdFlag: detectNoPrd, stripNoPrdFlag: stripNoPrd } = await import("./ralph/index.js");
+      const { createRalphLoopHook, findPrdPath: findPrd, initPrd: initPrdFn, initProgress: initProgressFn, detectNoPrdFlag: detectNoPrd, stripNoPrdFlag: stripNoPrd, detectCriticModeFlag, stripCriticModeFlag } = await import("./ralph/index.js");
       const rawPrompt =
         typeof input.prompt === "string" && input.prompt.trim().length > 0
           ? input.prompt
@@ -1391,7 +1402,9 @@ async function processPostToolUse(input: HookInput): Promise<HookOutput> {
 
       // Handle --no-prd flag
       const noPrd = detectNoPrd(rawPrompt);
-      const cleanPrompt = noPrd ? stripNoPrd(rawPrompt) : rawPrompt;
+      const criticMode = detectCriticModeFlag(rawPrompt) ?? undefined;
+      const promptWithoutCriticFlag = stripCriticModeFlag(rawPrompt);
+      const cleanPrompt = noPrd ? stripNoPrd(promptWithoutCriticFlag) : promptWithoutCriticFlag;
 
       // Auto-generate scaffold PRD if none exists and --no-prd not set
       const existingPrd = findPrd(directory);
@@ -1410,7 +1423,7 @@ async function processPostToolUse(input: HookInput): Promise<HookOutput> {
       }
 
       const hook = createRalphLoopHook(directory);
-      hook.startLoop(input.sessionId, cleanPrompt);
+      hook.startLoop(input.sessionId, cleanPrompt, criticMode ? { criticMode } : undefined);
     }
 
     // Clear skill-active state on skill completion to prevent false-blocking.
@@ -1442,12 +1455,15 @@ async function processPostToolUse(input: HookInput): Promise<HookOutput> {
     }
   }
 
-  // Wake OpenClaw gateway for post-tool-use (non-blocking, fires for all tools)
-  if (input.sessionId) {
+  // Wake OpenClaw gateway for post-tool-use (non-blocking, fires for all tools).
+  // AskUserQuestion already emitted a dedicated question.requested signal.
+  if (input.sessionId && input.toolName !== "AskUserQuestion") {
     _openclaw.wake("post-tool-use", {
       sessionId: input.sessionId,
       projectPath: directory,
       toolName: input.toolName,
+      toolInput: input.toolInput,
+      toolOutput: input.toolOutput,
     });
   }
 

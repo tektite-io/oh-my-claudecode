@@ -125,10 +125,12 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || { d="$PWD"; while [ "$
 
 # Resolve state directory (supports OMC_STATE_DIR centralized storage)
 if [ -n "${OMC_STATE_DIR:-}" ]; then
-  # Find the project state dir by matching the current repo's directory name
-  DIR_NAME="$(basename "$REPO_ROOT")"
-  OMC_STATE="$(find "$OMC_STATE_DIR" -maxdepth 2 -type d -name state -path "*${DIR_NAME}*" 2>/dev/null | head -1)"
-  [ -z "$OMC_STATE" ] && { echo "ERROR: Could not find state dir under OMC_STATE_DIR" >&2; exit 1; }
+  # Mirror getProjectIdentifier() from worktree-paths.ts
+  SOURCE="$(git remote get-url origin 2>/dev/null || echo "$REPO_ROOT")"
+  HASH="$(printf '%s' "$SOURCE" | shasum -a 256 | cut -c1-16)"
+  DIR_NAME="$(basename "$REPO_ROOT" | sed 's/[^a-zA-Z0-9_-]/_/g')"
+  OMC_STATE="$OMC_STATE_DIR/${DIR_NAME}-${HASH}/state"
+  [ ! -d "$OMC_STATE" ] && { echo "ERROR: State dir not found at $OMC_STATE" >&2; exit 1; }
 elif [ "$REPO_ROOT" != "/" ] && [ -d "$REPO_ROOT/.omc" ]; then
   OMC_STATE="$REPO_ROOT/.omc/state"
 else

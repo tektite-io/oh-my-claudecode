@@ -97,13 +97,19 @@ export function shouldWriteStateBack(statePath: string | null | undefined): bool
  * Used to prevent stop-hook re-enforcement races during /cancel.
  */
 function isSessionCancelInProgress(directory: string, sessionId?: string): boolean {
-  if (!sessionId) return false;
+  let cancelSignalPath: string | undefined;
 
-  let cancelSignalPath: string;
-  try {
-    cancelSignalPath = resolveSessionStatePath('cancel-signal', sessionId, directory);
-  } catch {
-    return false;
+  if (sessionId) {
+    try {
+      cancelSignalPath = resolveSessionStatePath('cancel-signal', sessionId, directory);
+    } catch {
+      // fall through to legacy path
+    }
+  }
+
+  // Fallback: check legacy (non-session-scoped) cancel signal
+  if (!cancelSignalPath) {
+    cancelSignalPath = join(getOmcRoot(directory), 'state', 'cancel-signal-state.json');
   }
 
   if (!existsSync(cancelSignalPath)) {

@@ -36,8 +36,22 @@ function isStringRecord(value) {
         && !Array.isArray(value)
         && Object.values(value).every(item => typeof item === 'string');
 }
+const RETIRED_TEAM_MCP_PATH_PATTERN = /(^|[\\/])bridge[\\/]+team-mcp\.cjs$/i;
+function isRetiredTeamMcpEntry(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return false;
+    }
+    const raw = value;
+    const args = Array.isArray(raw.args) && raw.args.every(item => typeof item === 'string')
+        ? raw.args
+        : [];
+    return args.some(arg => RETIRED_TEAM_MCP_PATH_PATTERN.test(arg));
+}
 function normalizeRegistryEntry(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+    }
+    if (isRetiredTeamMcpEntry(value)) {
         return null;
     }
     const raw = value;
@@ -83,6 +97,32 @@ function normalizeRegistry(value) {
 }
 export function extractClaudeMcpRegistry(settings) {
     return normalizeRegistry(settings.mcpServers);
+}
+export function stripRetiredTeamMcpServers(settings) {
+    const mcpServers = settings.mcpServers;
+    if (!mcpServers || typeof mcpServers !== 'object' || Array.isArray(mcpServers)) {
+        return { settings, changed: false };
+    }
+    let changed = false;
+    const nextServers = {};
+    for (const [name, entry] of Object.entries(mcpServers)) {
+        if (isRetiredTeamMcpEntry(entry)) {
+            changed = true;
+            continue;
+        }
+        nextServers[name] = entry;
+    }
+    if (!changed) {
+        return { settings, changed: false };
+    }
+    const nextSettings = { ...settings };
+    if (Object.keys(nextServers).length === 0) {
+        delete nextSettings.mcpServers;
+    }
+    else {
+        nextSettings.mcpServers = nextServers;
+    }
+    return { settings: nextSettings, changed: true };
 }
 function loadRegistryFromDisk(path) {
     try {

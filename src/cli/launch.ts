@@ -18,6 +18,7 @@ import {
 import { homedir } from 'os';
 import { basename, join } from 'path';
 import { resolvePluginDirArg } from '../lib/plugin-dir.js';
+import { stripRetiredTeamMcpServers } from '../installer/mcp-registry.js';
 import {
   resolveLaunchPolicy,
   buildTmuxSessionName,
@@ -105,6 +106,20 @@ export function prepareOmcLaunchConfigDir(baseConfigDir = process.env.CLAUDE_CON
     'settings.local.json',
   ]) {
     ensureMirroredPath(join(baseConfigDir, entry), join(runtimeConfigDir, basename(entry)));
+  }
+
+  const runtimeSettingsPath = join(runtimeConfigDir, 'settings.json');
+  if (existsSync(runtimeSettingsPath)) {
+    try {
+      const rawSettings = JSON.parse(readFileSync(runtimeSettingsPath, 'utf-8')) as Record<string, unknown>;
+      const repaired = stripRetiredTeamMcpServers(rawSettings);
+      if (repaired.changed) {
+        writeFileSync(runtimeSettingsPath, JSON.stringify(repaired.settings, null, 2));
+      }
+    } catch {
+      // Best-effort compatibility repair; launch must continue even if a legacy
+      // settings file cannot be parsed or rewritten.
+    }
   }
 
   writeFileSync(

@@ -7,6 +7,7 @@ import { cpSync, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, r
 import { homedir } from 'os';
 import { basename, join } from 'path';
 import { resolvePluginDirArg } from '../lib/plugin-dir.js';
+import { stripRetiredTeamMcpServers } from '../installer/mcp-registry.js';
 import { resolveLaunchPolicy, buildTmuxSessionName, buildTmuxShellCommand, wrapWithLoginShell, isClaudeAvailable, quoteShellArg, } from './tmux-utils.js';
 import { OMC_PLUGIN_ROOT_ENV } from '../lib/env-vars.js';
 import { OMC_CONFIG_FILE_REL } from '../lib/paths.js';
@@ -81,6 +82,20 @@ export function prepareOmcLaunchConfigDir(baseConfigDir = process.env.CLAUDE_CON
         'settings.local.json',
     ]) {
         ensureMirroredPath(join(baseConfigDir, entry), join(runtimeConfigDir, basename(entry)));
+    }
+    const runtimeSettingsPath = join(runtimeConfigDir, 'settings.json');
+    if (existsSync(runtimeSettingsPath)) {
+        try {
+            const rawSettings = JSON.parse(readFileSync(runtimeSettingsPath, 'utf-8'));
+            const repaired = stripRetiredTeamMcpServers(rawSettings);
+            if (repaired.changed) {
+                writeFileSync(runtimeSettingsPath, JSON.stringify(repaired.settings, null, 2));
+            }
+        }
+        catch {
+            // Best-effort compatibility repair; launch must continue even if a legacy
+            // settings file cannot be parsed or rewritten.
+        }
     }
     writeFileSync(join(runtimeConfigDir, '.omc-launch-profile.json'), JSON.stringify({ sourceConfigDir: baseConfigDir, sourceClaudeMd: companionPath }, null, 2));
     return runtimeConfigDir;

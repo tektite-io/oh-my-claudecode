@@ -737,6 +737,30 @@ describe('prepareOmcLaunchConfigDir / launchCommand OMC companion loading', () =
         expect(readFileSync(join(configDir, 'CLAUDE.md'), 'utf-8')).toBe('# User base config\n');
         expect(existsSync(join(runtimeDir, 'settings.json'))).toBe(true);
     });
+    it('repairs retired team MCP entries in the runtime settings copy', () => {
+        const configDir = join(tempRoot, '.claude');
+        mkdirSync(join(configDir, 'skills'), { recursive: true });
+        writeFileSync(join(configDir, 'CLAUDE-omc.md'), '<!-- OMC:START -->\n# OMC companion\n<!-- OMC:END -->\n');
+        writeFileSync(join(configDir, 'settings.json'), JSON.stringify({
+            theme: 'dark',
+            mcpServers: {
+                team: {
+                    command: 'node',
+                    args: ['${CLAUDE_PLUGIN_ROOT}/bridge/team-mcp.cjs'],
+                },
+                exa: {
+                    command: 'node',
+                    args: ['${CLAUDE_PLUGIN_ROOT}/bridge/mcp-server.cjs'],
+                },
+            },
+        }, null, 2));
+        const runtimeDir = prepareOmcLaunchConfigDir(configDir);
+        const runtimeSettings = JSON.parse(readFileSync(join(runtimeDir, 'settings.json'), 'utf-8'));
+        expect(runtimeSettings.theme).toBe('dark');
+        expect(runtimeSettings.mcpServers).toBeDefined();
+        expect(runtimeSettings.mcpServers?.team).toBeUndefined();
+        expect(runtimeSettings.mcpServers?.exa).toBeDefined();
+    });
     it('mirrors keybindings.json and rules/ into the runtime config dir', () => {
         const configDir = join(tempRoot, '.claude');
         mkdirSync(join(configDir, 'rules'), { recursive: true });

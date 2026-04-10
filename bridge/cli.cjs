@@ -8109,8 +8109,19 @@ function getCodexConfigPath() {
 function isStringRecord(value) {
   return !!value && typeof value === "object" && !Array.isArray(value) && Object.values(value).every((item) => typeof item === "string");
 }
+function isRetiredTeamMcpEntry(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const raw = value;
+  const args = Array.isArray(raw.args) && raw.args.every((item) => typeof item === "string") ? raw.args : [];
+  return args.some((arg) => RETIRED_TEAM_MCP_PATH_PATTERN.test(arg));
+}
 function normalizeRegistryEntry(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  if (isRetiredTeamMcpEntry(value)) {
     return null;
   }
   const raw = value;
@@ -8149,6 +8160,31 @@ function normalizeRegistry(value) {
 }
 function extractClaudeMcpRegistry(settings) {
   return normalizeRegistry(settings.mcpServers);
+}
+function stripRetiredTeamMcpServers(settings) {
+  const mcpServers = settings.mcpServers;
+  if (!mcpServers || typeof mcpServers !== "object" || Array.isArray(mcpServers)) {
+    return { settings, changed: false };
+  }
+  let changed = false;
+  const nextServers = {};
+  for (const [name, entry] of Object.entries(mcpServers)) {
+    if (isRetiredTeamMcpEntry(entry)) {
+      changed = true;
+      continue;
+    }
+    nextServers[name] = entry;
+  }
+  if (!changed) {
+    return { settings, changed: false };
+  }
+  const nextSettings = { ...settings };
+  if (Object.keys(nextServers).length === 0) {
+    delete nextSettings.mcpServers;
+  } else {
+    nextSettings.mcpServers = nextServers;
+  }
+  return { settings: nextSettings, changed: true };
 }
 function loadRegistryFromDisk(path22) {
   try {
@@ -8488,7 +8524,7 @@ function inspectUnifiedMcpRegistrySync() {
     codexMismatched
   };
 }
-var import_fs35, import_os10, import_path47, MANAGED_START, MANAGED_END;
+var import_fs35, import_os10, import_path47, MANAGED_START, MANAGED_END, RETIRED_TEAM_MCP_PATH_PATTERN;
 var init_mcp_registry = __esm({
   "src/installer/mcp-registry.ts"() {
     "use strict";
@@ -8499,6 +8535,7 @@ var init_mcp_registry = __esm({
     init_paths();
     MANAGED_START = "# BEGIN OMC MANAGED MCP REGISTRY";
     MANAGED_END = "# END OMC MANAGED MCP REGISTRY";
+    RETIRED_TEAM_MCP_PATH_PATTERN = /(^|[\\/])bridge[\\/]+team-mcp\.cjs$/i;
   }
 });
 
@@ -81643,6 +81680,7 @@ var import_child_process34 = require("child_process");
 var import_fs94 = require("fs");
 var import_os20 = require("os");
 var import_path114 = require("path");
+init_mcp_registry();
 
 // src/cli/tmux-utils.ts
 var import_child_process33 = require("child_process");
@@ -81781,6 +81819,17 @@ function prepareOmcLaunchConfigDir(baseConfigDir = process.env.CLAUDE_CONFIG_DIR
     "settings.local.json"
   ]) {
     ensureMirroredPath((0, import_path114.join)(baseConfigDir, entry), (0, import_path114.join)(runtimeConfigDir, (0, import_path114.basename)(entry)));
+  }
+  const runtimeSettingsPath = (0, import_path114.join)(runtimeConfigDir, "settings.json");
+  if ((0, import_fs94.existsSync)(runtimeSettingsPath)) {
+    try {
+      const rawSettings = JSON.parse((0, import_fs94.readFileSync)(runtimeSettingsPath, "utf-8"));
+      const repaired = stripRetiredTeamMcpServers(rawSettings);
+      if (repaired.changed) {
+        (0, import_fs94.writeFileSync)(runtimeSettingsPath, JSON.stringify(repaired.settings, null, 2));
+      }
+    } catch {
+    }
   }
   (0, import_fs94.writeFileSync)(
     (0, import_path114.join)(runtimeConfigDir, ".omc-launch-profile.json"),

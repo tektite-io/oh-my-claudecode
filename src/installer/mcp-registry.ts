@@ -86,8 +86,27 @@ function isStringRecord(value: unknown): value is Record<string, string> {
     && Object.values(value).every(item => typeof item === 'string');
 }
 
+const RETIRED_TEAM_MCP_PATH_PATTERN = /(^|[\\/])bridge[\\/]+team-mcp\.cjs$/i;
+
+function isRetiredTeamMcpEntry(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const raw = value as Record<string, unknown>;
+  const args = Array.isArray(raw.args) && raw.args.every(item => typeof item === 'string')
+    ? raw.args
+    : [];
+
+  return args.some(arg => RETIRED_TEAM_MCP_PATH_PATTERN.test(arg));
+}
+
 function normalizeRegistryEntry(value: unknown): UnifiedMcpRegistryEntry | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  if (isRetiredTeamMcpEntry(value)) {
     return null;
   }
 
@@ -142,6 +161,37 @@ function normalizeRegistry(value: unknown): UnifiedMcpRegistry {
 
 export function extractClaudeMcpRegistry(settings: Record<string, unknown>): UnifiedMcpRegistry {
   return normalizeRegistry(settings.mcpServers);
+}
+
+export function stripRetiredTeamMcpServers<T extends Record<string, unknown>>(settings: T): { settings: T; changed: boolean } {
+  const mcpServers = settings.mcpServers;
+  if (!mcpServers || typeof mcpServers !== 'object' || Array.isArray(mcpServers)) {
+    return { settings, changed: false };
+  }
+
+  let changed = false;
+  const nextServers: Record<string, unknown> = {};
+
+  for (const [name, entry] of Object.entries(mcpServers)) {
+    if (isRetiredTeamMcpEntry(entry)) {
+      changed = true;
+      continue;
+    }
+    nextServers[name] = entry;
+  }
+
+  if (!changed) {
+    return { settings, changed: false };
+  }
+
+  const nextSettings = { ...settings } as Record<string, unknown>;
+  if (Object.keys(nextServers).length === 0) {
+    delete nextSettings.mcpServers;
+  } else {
+    nextSettings.mcpServers = nextServers;
+  }
+
+  return { settings: nextSettings as T, changed: true };
 }
 
 function loadRegistryFromDisk(path: string): UnifiedMcpRegistry {

@@ -60,6 +60,43 @@ describe('unified MCP registry sync', () => {
         expect(codexConfig).toContain('args = ["mcp"]');
         expect(codexConfig).toContain('startup_timeout_sec = 15');
     });
+    it('drops retired team MCP runtime entries while syncing legacy configs', () => {
+        const settings = {
+            theme: 'dark',
+            mcpServers: {
+                team: {
+                    command: 'node',
+                    args: ['${CLAUDE_PLUGIN_ROOT}/bridge/team-mcp.cjs'],
+                },
+                gitnexus: {
+                    command: 'gitnexus',
+                    args: ['mcp'],
+                    timeout: 15,
+                },
+            },
+        };
+        const { settings: syncedSettings } = syncUnifiedMcpRegistryTargets(settings);
+        expect(syncedSettings).toEqual({ theme: 'dark' });
+        expect(JSON.parse(readFileSync(getUnifiedMcpRegistryPath(), 'utf-8'))).toEqual({
+            gitnexus: {
+                command: 'gitnexus',
+                args: ['mcp'],
+                timeout: 15,
+            },
+        });
+        expect(JSON.parse(readFileSync(getClaudeMcpConfigPath(), 'utf-8'))).toEqual({
+            mcpServers: {
+                gitnexus: {
+                    command: 'gitnexus',
+                    args: ['mcp'],
+                    timeout: 15,
+                },
+            },
+        });
+        const codexConfig = readFileSync(getCodexConfigPath(), 'utf-8');
+        expect(codexConfig).toContain('[mcp_servers.gitnexus]');
+        expect(codexConfig).not.toContain('team-mcp.cjs');
+    });
     it('round-trips URL-based remote MCP entries through the unified registry sync', () => {
         const settings = {
             mcpServers: {

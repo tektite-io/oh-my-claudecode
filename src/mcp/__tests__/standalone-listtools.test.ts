@@ -62,7 +62,6 @@ describe('standalone MCP server – ListTools E2E drift guard', () => {
       const dupes = names.filter((n) => (seen.has(n) ? true : (seen.add(n), false)));
       throw new Error(`Duplicate tool names detected: ${dupes.join(', ')}`);
     }
-    expect(unique.size).toBe(names.length);
   });
 
   // -------------------------------------------------------------------------

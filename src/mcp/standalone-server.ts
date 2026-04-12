@@ -18,6 +18,7 @@ import type { CallToolRequest, CallToolResult } from '@modelcontextprotocol/sdk/
 import { registerStandaloneShutdownHandlers } from './standalone-shutdown.js';
 import { cleanupOwnedBridgeSessions } from '../tools/python-repl/bridge-manager.js';
 import { allTools, buildListToolsResponse } from './tool-registry.js';
+import { disconnectAll as disconnectAllLsp } from '../tools/lsp/index.js';
 
 type StandaloneCallToolHandler = (
   request: CallToolRequest,
@@ -77,10 +78,6 @@ setStandaloneCallToolRequestHandler(CallToolRequestSchema, async (request) => {
 // Graceful shutdown: disconnect LSP servers on process termination (#768).
 // Without this, LSP child processes (e.g. jdtls) survive the MCP server exit
 // and become orphaned, consuming memory indefinitely.
-// The MCP server process owns the LSP child processes (spawned via
-// child_process.spawn in LspClient.connect), so cleanup must happen here.
-import { disconnectAll as disconnectAllLsp } from '../tools/lsp/index.js';
-
 async function gracefulShutdown(signal: string): Promise<void> {
   // Hard deadline: exit even if cleanup hangs (e.g. unresponsive LSP server)
   const forceExitTimer = setTimeout(() => process.exit(1), 5_000);

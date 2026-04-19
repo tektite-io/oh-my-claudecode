@@ -69,10 +69,10 @@ describe('Builtin Skills', () => {
   });
 
   describe('createBuiltinSkills()', () => {
-    it('should return correct number of skills (33 canonical + 1 alias)', () => {
+    it('should return correct number of skills (34 canonical + 1 alias)', () => {
       const skills = createBuiltinSkills();
-      // 34 entries: 33 canonical skills + 1 deprecated alias (psm)
-      expect(skills).toHaveLength(34);
+      // 35 entries: 34 canonical skills + 1 deprecated alias (psm)
+      expect(skills).toHaveLength(35);
     });
 
     it('should return an array of BuiltinSkill objects', () => {
@@ -124,6 +124,7 @@ describe('Builtin Skills', () => {
       const expectedSkills = [
         'ask',
         'ai-slop-cleaner',
+        'autoresearch',
         'autopilot',
         'cancel',
         'ccg',
@@ -308,8 +309,8 @@ describe('Builtin Skills', () => {
       expect(skill?.template).toContain('Ontology-style question for scope-fuzzy tasks');
       expect(skill?.template).toContain('Every round explicitly names the weakest dimension and why it is the next target');
       expect(skill?.argumentHint).toContain('--autoresearch');
-      expect(skill?.template).toContain('zero-learning-curve setup lane for `omc autoresearch`');
-      expect(skill?.template).toContain('autoresearch --mission "<mission>" --eval "<evaluator>"');
+      expect(skill?.template).toContain('zero-learning-curve setup lane for the stateful `autoresearch` skill');
+      expect(skill?.template).toContain('Skill("oh-my-claudecode:autoresearch")');
     });
 
     it('loads deep-interview ambiguityThreshold from settings before state init and updates the announcement copy', () => {
@@ -445,9 +446,9 @@ describe('Builtin Skills', () => {
         const askSkill = getBuiltinSkill('ask');
 
         expect(deepInterviewSkill?.template)
-          .toContain('zero-learning-curve setup lane for `node "$CLAUDE_PLUGIN_ROOT"/bridge/cli.cjs autoresearch`');
+          .toContain('zero-learning-curve setup lane for the stateful `autoresearch` skill');
         expect(deepInterviewSkill?.template)
-          .toContain('node "$CLAUDE_PLUGIN_ROOT"/bridge/cli.cjs autoresearch --mission "<mission>" --eval "<evaluator>"');
+          .toContain('Skill("oh-my-claudecode:autoresearch")');
         expect(askSkill?.template)
           .toContain('node "$CLAUDE_PLUGIN_ROOT"/bridge/cli.cjs ask {{ARGUMENTS}}');
       } finally {
@@ -458,6 +459,17 @@ describe('Builtin Skills', () => {
         if (savedCodeSessionId === undefined) delete process.env.CLAUDECODE_SESSION_ID;
         else process.env.CLAUDECODE_SESSION_ID = savedCodeSessionId;
       }
+    });
+
+    it('should retrieve the autoresearch skill by name', () => {
+      const skill = getBuiltinSkill('autoresearch');
+      expect(skill).toBeDefined();
+      expect(skill?.name).toBe('autoresearch');
+      expect(skill?.template).toContain('stateful skill for bounded, evaluator-driven iterative improvement');
+      expect(skill?.template).toContain('Single-mission only in v1');
+      expect(skill?.template).toContain('max-runtime ceiling');
+      expect(skill?.template).toContain('per-iteration evaluation JSON');
+      expect(skill?.template).toContain('markdown decision logs');
     });
 
     it('should expose pipeline metadata for omc-plan handoff into autopilot', () => {
@@ -536,14 +548,16 @@ describe('Builtin Skills', () => {
     it('should return canonical skill names by default', () => {
       const names = listBuiltinSkillNames();
 
-      expect(names).toHaveLength(33);
+      expect(names).toHaveLength(34);
       expect(names).toContain('ai-slop-cleaner');
       expect(names).toContain('ask');
       expect(names).toContain('autopilot');
+      expect(names).toContain('autoresearch');
       expect(names).toContain('cancel');
       expect(names).toContain('ccg');
       expect(names).toContain('configure-notifications');
       expect(names).toContain('ralph');
+      expect(names).toContain('self-improve');
       expect(names).toContain('ultrawork');
       expect(names).toContain('omc-plan');
       expect(names).toContain('omc-reference');
@@ -555,6 +569,7 @@ describe('Builtin Skills', () => {
       expect(names).toContain('setup');
       expect(names).toContain('trace');
       expect(names).toContain('visual-verdict');
+      expect(names).toContain('wiki');
       expect(names).not.toContain('swarm'); // removed in #1131
       expect(names).not.toContain('psm');
     });
@@ -570,10 +585,13 @@ describe('Builtin Skills', () => {
       const names = listBuiltinSkillNames({ includeAliases: true });
 
       // swarm alias removed in #1131, psm still exists
-      expect(names).toHaveLength(34);
+      expect(names).toHaveLength(35);
       expect(names).toContain('ai-slop-cleaner');
+      expect(names).toContain('autoresearch');
+      expect(names).toContain('self-improve');
       expect(names).toContain('trace');
       expect(names).toContain('visual-verdict');
+      expect(names).toContain('wiki');
       expect(names).not.toContain('swarm');
       expect(names).toContain('psm');
     });

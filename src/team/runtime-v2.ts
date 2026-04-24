@@ -72,7 +72,7 @@ import {
   generatePromptModeStartupPrompt,
 } from './worker-bootstrap.js';
 import { queueInboxInstruction, type DispatchOutcome } from './mcp-comm.js';
-import { cleanupTeamWorktrees } from './git-worktree.js';
+import { cleanupTeamWorktrees, ensureWorkerWorktree, normalizeTeamWorktreeMode, type TeamWorktreeMode } from './git-worktree.js';
 import { formatOmcCliInvocation } from '../utils/omc-cli-rendering.js';
 import { createSwallowedErrorLogger } from '../lib/swallowed-error.js';
 import type { CanonicalTeamRole, PluginConfig, RoleAssignment, TeamRoleAssignmentSpec } from '../shared/types.js';
@@ -444,6 +444,8 @@ interface SpawnV2WorkerOptions {
   task: { subject: string; description: string };
   taskId: string;
   cwd: string;
+  workerCwd?: string;
+  worktreePath?: string;
   resolvedBinaryPaths: Partial<Record<CliAgentType, string>>;
   /**
    * Pre-resolved model ID from the team's routing snapshot. When set, overrides
@@ -537,7 +539,7 @@ async function spawnV2Worker(opts: SpawnV2WorkerOptions): Promise<SpawnV2WorkerR
   const splitResult = await tmuxExecAsync([
     'split-window', splitType, '-t', splitTarget,
     '-d', '-P', '-F', '#{pane_id}',
-    '-c', opts.cwd,
+    '-c', opts.workerCwd ?? opts.cwd,
   ]);
   const paneId = splitResult.stdout.split('\n')[0]?.trim();
   if (!paneId) {
@@ -576,6 +578,8 @@ async function spawnV2Worker(opts: SpawnV2WorkerOptions): Promise<SpawnV2WorkerR
     ...getModelWorkerEnv(opts.teamName, opts.workerName, opts.agentType),
     OMC_TEAM_STATE_ROOT: teamStateRoot(opts.cwd, opts.teamName),
     OMC_TEAM_LEADER_CWD: opts.cwd,
+    ...(opts.worktreePath ? { OMC_TEAM_WORKTREE_PATH: opts.worktreePath } : {}),
+    ...(opts.workerCwd ? { OMC_TEAM_WORKER_CWD: opts.workerCwd } : {}),
   };
   const resolvedBinaryPath = opts.resolvedBinaryPaths[opts.agentType]
     ?? resolveValidatedBinaryPath(opts.agentType);
@@ -603,7 +607,7 @@ async function spawnV2Worker(opts: SpawnV2WorkerOptions): Promise<SpawnV2WorkerR
   const [launchBinary, ...launchArgs] = buildWorkerArgv(opts.agentType, {
     teamName: opts.teamName,
     workerName: opts.workerName,
-    cwd: opts.cwd,
+    cwd: opts.workerCwd ?? opts.cwd,
     resolvedBinaryPath,
     model: modelForAgent,
   });
@@ -621,7 +625,7 @@ async function spawnV2Worker(opts: SpawnV2WorkerOptions): Promise<SpawnV2WorkerR
     envVars,
     launchBinary,
     launchArgs,
-    cwd: opts.cwd,
+    cwd: opts.workerCwd ?? opts.cwd,
   };
 
   await spawnWorkerInPane(opts.sessionName, paneId, paneConfig);
@@ -738,6 +742,10 @@ export async function startTeamV2(config: StartTeamV2Config): Promise<TeamRuntim
   // do NOT change routing — user must recreate the team to pick up changes.
   const pluginCfg: PluginConfig = config.pluginConfig ?? loadConfig();
   const resolvedRouting = buildResolvedRoutingSnapshot(pluginCfg);
+  const worktreeMode: TeamWorktreeMode = normalizeTeamWorktreeMode(
+    process.env.OMC_TEAM_WORKTREE_MODE ?? pluginCfg.team?.ops?.worktreeMode,
+  );
+  const workspaceMode = worktreeMode === 'disabled' ? 'single' as const : 'worktree' as const;
 
   // Validate CLIs and pin absolute binary paths for user-declared agentTypes.
   // AC-8: missing/untrusted binaries fall back to the snapshot's Claude tuple at
@@ -819,6 +827,16 @@ export async function startTeamV2(config: StartTeamV2Config): Promise<TeamRuntim
 
   // Build allocation inputs for the new role-aware allocator
   const workerNames = Array.from({ length: config.workerCount }, (_, index) => `worker-${index + 1}`);
+  const workerWorktrees = new Map<string, NonNullable<ReturnType<typeof ensureWorkerWorktree>>>();
+  if (worktreeMode !== 'disabled') {
+    for (const workerName of workerNames) {
+      const worktree = ensureWorkerWorktree(sanitized, workerName, leaderCwd, {
+        mode: worktreeMode,
+        requireCleanLeader: true,
+      });
+      if (worktree) workerWorktrees.set(workerName, worktree);
+    }
+  }
   const workerNameSet = new Set(workerNames);
 
   // Respect explicit owner fields first, then allocate remaining tasks
@@ -875,14 +893,25 @@ export async function startTeamV2(config: StartTeamV2Config): Promise<TeamRuntim
   const workerPaneIds: string[] = [];
 
   // Build workers info for config
-  const workersInfo: WorkerInfo[] = workerNames.map((wName, i) => ({
-    name: wName,
-    index: i + 1,
-    role: config.workerRoles?.[i]
-      ?? (agentTypes[i % agentTypes.length] ?? agentTypes[0] ?? 'claude') as string,
-    assigned_tasks: [] as string[],
-    working_dir: leaderCwd,
-  }));
+  const workersInfo: WorkerInfo[] = workerNames.map((wName, i) => {
+    const worktree = workerWorktrees.get(wName);
+    return {
+      name: wName,
+      index: i + 1,
+      role: config.workerRoles?.[i]
+        ?? (agentTypes[i % agentTypes.length] ?? agentTypes[0] ?? 'claude') as string,
+      assigned_tasks: [] as string[],
+      working_dir: worktree?.path ?? leaderCwd,
+      team_state_root: teamStateRoot(leaderCwd, sanitized),
+      ...(worktree ? {
+        worktree_repo_root: leaderCwd,
+        worktree_path: worktree.path,
+        worktree_branch: worktree.branch,
+        worktree_detached: worktree.detached,
+        worktree_created: worktree.created,
+      } : {}),
+    };
+  });
 
   // Write initial v2 config
   const teamConfig: TeamConfig = {
@@ -906,7 +935,8 @@ export async function startTeamV2(config: StartTeamV2Config): Promise<TeamRuntim
     resize_hook_name: null,
     resize_hook_target: null,
     resolved_routing: resolvedRouting,
-    ...(ownsWindow ? { workspace_mode: 'single' as const } : {}),
+    workspace_mode: workspaceMode,
+    worktree_mode: worktreeMode,
   };
   await saveTeamConfig(teamConfig, leaderCwd);
   const permissionsSnapshot = {
@@ -934,6 +964,7 @@ export async function startTeamV2(config: StartTeamV2Config): Promise<TeamRuntim
     leader_cwd: leaderCwd,
     team_state_root: teamConfig.team_state_root,
     workspace_mode: teamConfig.workspace_mode,
+    worktree_mode: teamConfig.worktree_mode,
     leader_pane_id: leaderPaneId,
     hud_pane_id: null,
     resize_hook_name: null,
@@ -982,6 +1013,8 @@ export async function startTeamV2(config: StartTeamV2Config): Promise<TeamRuntim
       task,
       taskId,
       cwd: leaderCwd,
+      workerCwd: workersInfo[workerIndex]?.working_dir ?? leaderCwd,
+      worktreePath: workersInfo[workerIndex]?.worktree_path,
       resolvedBinaryPaths,
       ...(assignment.model ? { model: assignment.model } : {}),
       ...(assignment.role ? { role: assignment.role } : {}),

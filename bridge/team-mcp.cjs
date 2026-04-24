@@ -18422,20 +18422,34 @@ function withFileLockSync(lockPath, fn, opts) {
 }
 
 // src/team/git-worktree.ts
-function getWorkerWorktreePath(repoRoot, teamName, workerName) {
+function getWorktreePath(repoRoot, teamName, workerName) {
   return (0, import_node_path.join)(repoRoot, ".omc", "team", sanitizeName(teamName), "worktrees", sanitizeName(workerName));
 }
 function getBranchName(teamName, workerName) {
   return `omc-team/${sanitizeName(teamName)}/${sanitizeName(workerName)}`;
 }
-function gitOutput(repoRoot, args, cwd = repoRoot) {
-  return (0, import_node_child_process.execFileSync)("git", args, { cwd, encoding: "utf-8", stdio: "pipe" });
+function git(repoRoot, args, cwd = repoRoot) {
+  return (0, import_node_child_process.execFileSync)("git", args, { cwd, encoding: "utf-8", stdio: "pipe" }).trim();
+}
+function isRegisteredWorktreePath(repoRoot, wtPath) {
+  try {
+    const output = git(repoRoot, ["worktree", "list", "--porcelain"]);
+    const resolvedWtPath = (0, import_node_path.resolve)(wtPath);
+    for (const line of output.split("\n")) {
+      if (!line.startsWith("worktree ")) continue;
+      if ((0, import_node_path.resolve)(line.slice("worktree ".length).trim()) === resolvedWtPath) {
+        return true;
+      }
+    }
+  } catch {
+  }
+  return false;
 }
 function isWorktreeDirty(wtPath) {
   try {
-    return gitOutput(wtPath, ["status", "--porcelain"], wtPath).trim() !== "";
+    return git(wtPath, ["status", "--porcelain"], wtPath).length > 0;
   } catch {
-    return (0, import_node_fs.existsSync)(wtPath);
+    return false;
   }
 }
 function getMetadataPath(repoRoot, teamName) {
@@ -18466,13 +18480,21 @@ function writeMetadata(repoRoot, teamName, entries) {
   ensureDirWithMode((0, import_node_path.join)(repoRoot, ".omc", "state", "team", sanitizeName(teamName)));
   atomicWriteJson(metaPath, entries);
 }
+function forgetMetadata(repoRoot, teamName, workerName) {
+  const metaLockPath = getMetadataPath(repoRoot, teamName) + ".lock";
+  withFileLockSync(metaLockPath, () => {
+    const existing = readMetadata(repoRoot, teamName);
+    const updated = existing.filter((e) => e.workerName !== workerName);
+    writeMetadata(repoRoot, teamName, updated);
+  });
+}
 function removeWorkerWorktree(teamName, workerName, repoRoot) {
   const wtPath = getWorkerWorktreePath(repoRoot, teamName, workerName);
   const branch = getBranchName(teamName, workerName);
   if ((0, import_node_fs.existsSync)(wtPath) && isWorktreeDirty(wtPath)) {
-    const err = new Error(`worktree_dirty: preserving dirty worktree at ${wtPath}`);
-    err.name = "worktree_dirty";
-    throw err;
+    const error2 = new Error(`worktree_dirty: preserving dirty worker worktree at ${wtPath}`);
+    error2.code = "worktree_dirty";
+    throw error2;
   }
   try {
     (0, import_node_child_process.execFileSync)("git", ["worktree", "remove", wtPath], { cwd: repoRoot, stdio: "pipe" });
@@ -18486,24 +18508,25 @@ function removeWorkerWorktree(teamName, workerName, repoRoot) {
     (0, import_node_child_process.execFileSync)("git", ["branch", "-D", branch], { cwd: repoRoot, stdio: "pipe" });
   } catch {
   }
-  const metaLockPath = getMetadataPath(repoRoot, teamName) + ".lock";
-  withFileLockSync(metaLockPath, () => {
-    const updated = readMetadata(repoRoot, teamName).filter((e) => e.workerName !== workerName);
-    writeMetadata(repoRoot, teamName, updated);
-  });
+  if ((0, import_node_fs.existsSync)(wtPath) && !isRegisteredWorktreePath(repoRoot, wtPath)) {
+    (0, import_node_fs.rmSync)(wtPath, { recursive: true, force: true });
+  }
+  forgetMetadata(repoRoot, teamName, workerName);
 }
 function cleanupTeamWorktrees(teamName, repoRoot) {
   const removed = [];
   const preserved = [];
   const entries = readMetadata(repoRoot, teamName);
+  const removed = [];
+  const preserved = [];
   for (const entry of entries) {
     try {
       removeWorkerWorktree(teamName, entry.workerName, repoRoot);
-      removed.push(entry);
-    } catch (error2) {
-      const reason = error2 instanceof Error ? error2.message : String(error2);
-      preserved.push({ info: entry, reason });
-      process.stderr.write(`[omc] warning: preserving worktree for ${entry.workerName}: ${reason}
+      removed.push(entry.workerName);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      preserved.push({ workerName: entry.workerName, path: entry.path, reason });
+      process.stderr.write(`[omc] warning: preserved worktree ${entry.path}: ${reason}
 `);
     }
   }

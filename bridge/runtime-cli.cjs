@@ -3204,7 +3204,6 @@ async function writeWorkerOverlay(params) {
 var import_node_fs = require("node:fs");
 var import_node_path = require("node:path");
 var import_node_child_process = require("node:child_process");
-var import_node_crypto = require("node:crypto");
 
 // src/team/fs-utils.ts
 var import_fs7 = require("fs");
@@ -3372,13 +3371,6 @@ function restoreWorktreeRootAgents(teamName, workerName2, repoRoot, worktreePath
   if (!backup) return { restored: false, reason: "no_backup" };
   const resolvedWorktreePath = worktreePath ?? backup.worktreePath;
   validateResolvedPath(resolvedWorktreePath, repoRoot);
-  if (!(0, import_node_fs.existsSync)(resolvedWorktreePath)) {
-    try {
-      (0, import_node_fs.unlinkSync)(backupPath);
-    } catch {
-    }
-    return { restored: false, reason: "worktree_missing" };
-  }
   const agentsPath = (0, import_node_path.join)(resolvedWorktreePath, "AGENTS.md");
   validateResolvedPath(agentsPath, repoRoot);
   const currentContent = (0, import_node_fs.existsSync)(agentsPath) ? (0, import_node_fs.readFileSync)(agentsPath, "utf-8") : void 0;

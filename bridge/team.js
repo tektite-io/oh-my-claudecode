@@ -4975,7 +4975,6 @@ var init_file_lock = __esm({
 import { existsSync as existsSync10, readFileSync as readFileSync7, rmSync as rmSync2, unlinkSync as unlinkSync4, writeFileSync as writeFileSync2 } from "node:fs";
 import { join as join15, resolve as resolve3 } from "node:path";
 import { execFileSync as execFileSync3 } from "node:child_process";
-import { createHash } from "node:crypto";
 function getWorktreePath(repoRoot, teamName, workerName) {
   return join15(repoRoot, ".omc", "team", sanitizeName(teamName), "worktrees", sanitizeName(workerName));
 }
@@ -5098,13 +5097,6 @@ function restoreWorktreeRootAgents(teamName, workerName, repoRoot, worktreePath)
   if (!backup) return { restored: false, reason: "no_backup" };
   const resolvedWorktreePath = worktreePath ?? backup.worktreePath;
   validateResolvedPath(resolvedWorktreePath, repoRoot);
-  if (!existsSync10(resolvedWorktreePath)) {
-    try {
-      unlinkSync4(backupPath);
-    } catch {
-    }
-    return { restored: false, reason: "worktree_missing" };
-  }
   const agentsPath = join15(resolvedWorktreePath, "AGENTS.md");
   validateResolvedPath(agentsPath, repoRoot);
   const currentContent = existsSync10(agentsPath) ? readFileSync7(agentsPath, "utf-8") : void 0;

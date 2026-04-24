@@ -14,7 +14,6 @@
 import { existsSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { atomicWriteJson, ensureDirWithMode, validateResolvedPath } from './fs-utils.js';
 import { sanitizeName } from './tmux-session.js';
 import { withFileLockSync } from '../lib/file-lock.js';
@@ -171,13 +170,6 @@ export function restoreWorktreeRootAgents(teamName, workerName, repoRoot, worktr
         return { restored: false, reason: 'no_backup' };
     const resolvedWorktreePath = worktreePath ?? backup.worktreePath;
     validateResolvedPath(resolvedWorktreePath, repoRoot);
-    if (!existsSync(resolvedWorktreePath)) {
-        try {
-            unlinkSync(backupPath);
-        }
-        catch { /* backup already gone */ }
-        return { restored: false, reason: 'worktree_missing' };
-    }
     const agentsPath = join(resolvedWorktreePath, 'AGENTS.md');
     validateResolvedPath(agentsPath, repoRoot);
     const currentContent = existsSync(agentsPath) ? readFileSync(agentsPath, 'utf-8') : undefined;

@@ -202,7 +202,7 @@ describe('git-worktree', () => {
             const result = cleanupTeamWorktrees(teamName, repoDir);
             expect(result.removed).toHaveLength(0);
             expect(result.preserved).toHaveLength(1);
-            expect(result.preserved[0]?.reason).toContain('worktree_dirty');
+            expect(result.preserved[0]?.reason).toContain('agents_dirty');
             expect(existsSync(info.path)).toBe(true);
             expect(readFileSync(join(info.path, 'AGENTS.md'), 'utf-8')).toBe('human edits');
         });

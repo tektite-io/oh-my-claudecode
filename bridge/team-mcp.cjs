@@ -17775,7 +17775,7 @@ var StdioServerTransport = class {
 };
 
 // src/mcp/team-server.ts
-var import_node_crypto2 = require("node:crypto");
+var import_node_crypto = require("node:crypto");
 var import_child_process3 = require("child_process");
 var import_path7 = require("path");
 var import_url = require("url");
@@ -18207,7 +18207,6 @@ var import_path4 = require("path");
 var import_node_fs = require("node:fs");
 var import_node_path = require("node:path");
 var import_node_child_process = require("node:child_process");
-var import_node_crypto = require("node:crypto");
 
 // src/team/fs-utils.ts
 var import_fs2 = require("fs");
@@ -18479,13 +18478,6 @@ function restoreWorktreeRootAgents(teamName, workerName, repoRoot, worktreePath)
   if (!backup) return { restored: false, reason: "no_backup" };
   const resolvedWorktreePath = worktreePath ?? backup.worktreePath;
   validateResolvedPath(resolvedWorktreePath, repoRoot);
-  if (!(0, import_node_fs.existsSync)(resolvedWorktreePath)) {
-    try {
-      (0, import_node_fs.unlinkSync)(backupPath);
-    } catch {
-    }
-    return { restored: false, reason: "worktree_missing" };
-  }
   const agentsPath = (0, import_node_path.join)(resolvedWorktreePath, "AGENTS.md");
   validateResolvedPath(agentsPath, repoRoot);
   const currentContent = (0, import_node_fs.existsSync)(agentsPath) ? (0, import_node_fs.readFileSync)(agentsPath, "utf-8") : void 0;
@@ -18882,7 +18874,7 @@ async function handleStart(args) {
   }
   const input = startSchema.parse(args);
   validateTeamName(input.teamName);
-  const jobId = `omc-${Date.now().toString(36)}${(0, import_node_crypto2.randomUUID)().slice(0, 8)}`;
+  const jobId = `omc-${Date.now().toString(36)}${(0, import_node_crypto.randomUUID)().slice(0, 8)}`;
   const runtimeCliPath = (0, import_path7.join)(__ownDir, "runtime-cli.cjs");
   const job = { status: "running", startedAt: Date.now(), teamName: input.teamName, cwd: input.cwd };
   omcTeamJobs.set(jobId, job);

@@ -30264,13 +30264,6 @@ function restoreWorktreeRootAgents(teamName, workerName2, repoRoot, worktreePath
   if (!backup) return { restored: false, reason: "no_backup" };
   const resolvedWorktreePath = worktreePath ?? backup.worktreePath;
   validateResolvedPath(resolvedWorktreePath, repoRoot);
-  if (!(0, import_node_fs6.existsSync)(resolvedWorktreePath)) {
-    try {
-      (0, import_node_fs6.unlinkSync)(backupPath);
-    } catch {
-    }
-    return { restored: false, reason: "worktree_missing" };
-  }
   const agentsPath = (0, import_node_path7.join)(resolvedWorktreePath, "AGENTS.md");
   validateResolvedPath(agentsPath, repoRoot);
   const currentContent = (0, import_node_fs6.existsSync)(agentsPath) ? (0, import_node_fs6.readFileSync)(agentsPath, "utf-8") : void 0;
@@ -30454,14 +30447,13 @@ function cleanupTeamWorktrees(teamName, repoRoot) {
   }
   return { removed, preserved };
 }
-var import_node_fs6, import_node_path7, import_node_child_process6, import_node_crypto2;
+var import_node_fs6, import_node_path7, import_node_child_process6;
 var init_git_worktree = __esm({
   "src/team/git-worktree.ts"() {
     "use strict";
     import_node_fs6 = require("node:fs");
     import_node_path7 = require("node:path");
     import_node_child_process6 = require("node:child_process");
-    import_node_crypto2 = require("node:crypto");
     init_fs_utils();
     init_tmux_session();
     init_file_lock();
